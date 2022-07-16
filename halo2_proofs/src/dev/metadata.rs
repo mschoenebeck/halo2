@@ -90,7 +90,7 @@ pub struct Gate {
     pub(super) index: usize,
     /// The name of the active gate. These are specified by the gate creator (such as
     /// a chip implementation), and is not enforced to be unique.
-    pub(super) name: &'static str,
+    pub(super) name: String,
 }
 
 impl fmt::Display for Gate {
@@ -99,8 +99,8 @@ impl fmt::Display for Gate {
     }
 }
 
-impl From<(usize, &'static str)> for Gate {
-    fn from((index, name): (usize, &'static str)) -> Self {
+impl From<(usize, String)> for Gate {
+    fn from((index, name): (usize, String)) -> Self {
         Gate { index, name }
     }
 }
@@ -116,7 +116,7 @@ pub struct Constraint {
     pub(super) index: usize,
     /// The name of the constraint. This is specified by the gate creator (such as a chip
     /// implementation), and is not enforced to be unique.
-    pub(super) name: &'static str,
+    pub(super) name: String,
 }
 
 impl fmt::Display for Constraint {
@@ -136,8 +136,8 @@ impl fmt::Display for Constraint {
     }
 }
 
-impl From<(Gate, usize, &'static str)> for Constraint {
-    fn from((gate, index, name): (Gate, usize, &'static str)) -> Self {
+impl From<(Gate, usize, String)> for Constraint {
+    fn from((gate, index, name): (Gate, usize, String)) -> Self {
         Constraint { gate, index, name }
     }
 }

@@ -5,6 +5,8 @@
 //! [halo]: https://eprint.iacr.org/2019/1021
 //! [plonk]: https://eprint.iacr.org/2019/953
 
+use serde::{Serialize, Deserialize};
+
 use blake2b_simd::Params as Blake2bParams;
 use group::ff::Field;
 
@@ -38,7 +40,7 @@ use std::io;
 
 /// This is a verifying key which allows for the verification of proofs for a
 /// particular circuit.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct VerifyingKey<C: CurveAffine> {
     domain: EvaluationDomain<C::Scalar>,
     fixed_commitments: Vec<C>,

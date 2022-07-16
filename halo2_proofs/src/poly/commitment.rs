@@ -26,7 +26,8 @@ use std::io;
 /// These are the public parameters for the polynomial commitment scheme.
 #[derive(Clone, Debug)]
 pub struct Params<C: CurveAffine> {
-    pub(crate) k: u32,
+    /// size of circuit
+    pub k: u32,
     pub(crate) n: u64,
     pub(crate) g: Vec<C>,
     pub(crate) g_lagrange: Vec<C>,
