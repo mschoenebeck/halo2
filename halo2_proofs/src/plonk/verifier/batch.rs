@@ -7,7 +7,7 @@ use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterato
 
 use super::{verify_proof, VerificationStrategy};
 use crate::{
-    multicore,
+    //multicore, // mschoenebeck: commented out because it's unused(?)
     plonk::{Error, VerifyingKey},
     poly::commitment::{Guard, Params, MSM},
     transcript::{Blake2bRead, EncodedChallenge, TranscriptRead},

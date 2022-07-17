@@ -74,6 +74,7 @@ dev-graph = ["plotters", "tabbycat"]
 gadget-traces = ["backtrace"]
 sanity-checks = []
 batch = ["rand_core/getrandom"]
+multicore = []
 
 [lib]
 bench = false

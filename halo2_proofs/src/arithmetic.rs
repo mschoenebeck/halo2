@@ -1,6 +1,7 @@
 //! This module provides common utilities, traits and structures for group,
 //! field and polynomial arithmetic.
 
+#[cfg(feature = "multicore")]
 use super::multicore;
 pub use ff::Field;
 use group::{
@@ -129,6 +130,7 @@ pub fn small_multiexp<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C]) -> C::C
 /// This function will panic if coeffs and bases have a different length.
 ///
 /// This will use multithreading if beneficial.
+#[cfg(feature = "multicore")]
 pub fn best_multiexp<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C]) -> C::Curve {
     assert_eq!(coeffs.len(), bases.len());
 
@@ -157,6 +159,15 @@ pub fn best_multiexp<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C]) -> C::Cu
         acc
     }
 }
+///
+#[cfg(not(feature = "multicore"))]
+pub fn best_multiexp<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C]) -> C::Curve {
+    assert_eq!(coeffs.len(), bases.len());
+
+    let mut acc = C::Curve::identity();
+    multiexp_serial(coeffs, bases, &mut acc);
+    acc
+}
 
 /// Performs a radix-$2$ Fast-Fourier Transformation (FFT) on a vector of size
 /// $n = 2^k$, when provided `log_n` = $k$ and an element of multiplicative
@@ -168,6 +179,7 @@ pub fn best_multiexp<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C]) -> C::Cu
 /// by $n$.
 ///
 /// This will use multithreading if beneficial.
+#[cfg(feature = "multicore")]
 pub fn best_fft<G: Group>(a: &mut [G], omega: G::Scalar, log_n: u32) {
     fn bitreverse(mut n: usize, l: usize) -> usize {
         let mut r = 0;
@@ -232,8 +244,42 @@ pub fn best_fft<G: Group>(a: &mut [G], omega: G::Scalar, log_n: u32) {
         recursive_butterfly_arithmetic(a, n, 1, &twiddles)
     }
 }
+///
+#[cfg(not(feature = "multicore"))]
+pub fn best_fft<G: Group>(a: &mut [G], omega: G::Scalar, log_n: u32) {
+    fn bitreverse(mut n: usize, l: usize) -> usize {
+        let mut r = 0;
+        for _ in 0..l {
+            r = (r << 1) | (n & 1);
+            n >>= 1;
+        }
+        r
+    }
+
+    let n = a.len() as usize;
+    assert_eq!(n, 1 << log_n);
+
+    for k in 0..n {
+        let rk = bitreverse(k, log_n as usize);
+        if k < rk {
+            a.swap(rk, k);
+        }
+    }
+
+    // precompute twiddle factors
+    let twiddles: Vec<_> = (0..(n / 2) as usize)
+        .scan(G::Scalar::one(), |w, _| {
+            let tw = *w;
+            w.group_scale(&omega);
+            Some(tw)
+        })
+        .collect();
+
+    recursive_butterfly_arithmetic(a, n, 1, &twiddles)
+}
 
 /// This perform recursive butterfly arithmetic
+#[cfg(feature = "multicore")]
 pub fn recursive_butterfly_arithmetic<G: Group>(
     a: &mut [G],
     n: usize,
@@ -247,10 +293,49 @@ pub fn recursive_butterfly_arithmetic<G: Group>(
         a[1].group_sub(&t);
     } else {
         let (left, right) = a.split_at_mut(n / 2);
-        rayon::join(
+        multicore::join(
             || recursive_butterfly_arithmetic(left, n / 2, twiddle_chunk * 2, twiddles),
             || recursive_butterfly_arithmetic(right, n / 2, twiddle_chunk * 2, twiddles),
         );
+
+        // case when twiddle factor is one
+        let (a, left) = left.split_at_mut(1);
+        let (b, right) = right.split_at_mut(1);
+        let t = b[0];
+        b[0] = a[0];
+        a[0].group_add(&t);
+        b[0].group_sub(&t);
+
+        left.iter_mut()
+            .zip(right.iter_mut())
+            .enumerate()
+            .for_each(|(i, (a, b))| {
+                let mut t = *b;
+                t.group_scale(&twiddles[(i + 1) * twiddle_chunk]);
+                *b = *a;
+                a.group_add(&t);
+                b.group_sub(&t);
+            });
+    }
+}
+
+///
+#[cfg(not(feature = "multicore"))]
+pub fn recursive_butterfly_arithmetic<G: Group>(
+    a: &mut [G],
+    n: usize,
+    twiddle_chunk: usize,
+    twiddles: &[G::Scalar],
+) {
+    if n == 2 {
+        let t = a[1];
+        a[1] = a[0];
+        a[0].group_add(&t);
+        a[1].group_sub(&t);
+    } else {
+        let (left, right) = a.split_at_mut(n / 2);
+        recursive_butterfly_arithmetic(left, n / 2, twiddle_chunk * 2, twiddles);
+        recursive_butterfly_arithmetic(right, n / 2, twiddle_chunk * 2, twiddles);
 
         // case when twiddle factor is one
         let (a, left) = left.split_at_mut(1);
@@ -321,6 +406,7 @@ where
 
 /// This simple utility function will parallelize an operation that is to be
 /// performed over a mutable slice.
+#[cfg(feature = "multicore")]
 pub fn parallelize<T: Send, F: Fn(&mut [T], usize) + Send + Sync + Clone>(v: &mut [T], f: F) {
     let n = v.len();
     let num_threads = multicore::current_num_threads();
@@ -339,7 +425,13 @@ pub fn parallelize<T: Send, F: Fn(&mut [T], usize) + Send + Sync + Clone>(v: &mu
         }
     });
 }
+///
+#[cfg(not(feature = "multicore"))]
+pub fn parallelize<T: Send, F: Fn(&mut [T], usize) + Send + Sync + Clone>(v: &mut [T], f: F) {
+    f(v, 0);
+}
 
+#[cfg(feature = "multicore")]
 fn log2_floor(num: usize) -> u32 {
     assert!(num > 0);
 
