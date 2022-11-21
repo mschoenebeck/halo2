@@ -16,6 +16,10 @@ use super::{
 };
 use crate::{arithmetic::parallelize, multicore};
 
+use rayon::prelude::{ParallelSliceMut, ParallelIterator};
+use rayon::iter::IndexedParallelIterator;
+use rayon::iter::IntoParallelRefIterator;
+
 /// Returns `(chunk_size, num_chunks)` suitable for processing the given polynomial length
 /// in the current parallelization environment.
 fn get_chunk_params(poly_len: usize) -> (usize, usize) {
@@ -260,6 +264,19 @@ impl<E, F: Field, B: Basis> Evaluator<E, F, B> {
         // polynomial.
         let mut result = B::empty_poly(domain);
         #[cfg(feature = "multicore")]
+        result.par_chunks_mut(chunk_size).zip(chunks.par_iter()).enumerate().for_each(
+            |(chunk_index, (out, leaves))| 
+        {
+            let ctx = AstContext {
+                domain,
+                poly_len,
+                chunk_size,
+                chunk_index,
+                leaves,
+            };
+            out.copy_from_slice(&recurse(ast, &ctx));
+        });
+        /*
         multicore::scope(|scope| {
             for (chunk_index, (out, leaves)) in
                 result.chunks_mut(chunk_size).zip(chunks.iter()).enumerate()
@@ -276,6 +293,7 @@ impl<E, F: Field, B: Basis> Evaluator<E, F, B> {
                 });
             }
         });
+        */
         #[cfg(not(feature = "multicore"))]
         for (chunk_index, (out, leaves)) in
             result.chunks_mut(chunk_size).zip(chunks.iter()).enumerate()

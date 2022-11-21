@@ -1,7 +1,6 @@
 //! This module provides common utilities, traits and structures for group,
 //! field and polynomial arithmetic.
 
-#[cfg(feature = "multicore")]
 use super::multicore;
 pub use ff::Field;
 use group::{
@@ -10,6 +9,12 @@ use group::{
 };
 
 pub use pasta_curves::arithmetic::*;
+
+use rayon::prelude::ParallelSlice;
+use rayon::iter::IndexedParallelIterator;
+use rayon::iter::IntoParallelRefMutIterator;
+use rayon::prelude::ParallelIterator;
+use rayon::prelude::ParallelSliceMut;
 
 fn multiexp_serial<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C], acc: &mut C::Curve) {
     let coeffs: Vec<_> = coeffs.iter().map(|a| a.to_repr()).collect();
@@ -139,19 +144,16 @@ pub fn best_multiexp<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C]) -> C::Cu
         let chunk = coeffs.len() / num_threads;
         let num_chunks = coeffs.chunks(chunk).len();
         let mut results = vec![C::Curve::identity(); num_chunks];
-        multicore::scope(|scope| {
-            let chunk = coeffs.len() / num_threads;
+        let chunk = coeffs.len() / num_threads;
 
-            for ((coeffs, bases), acc) in coeffs
-                .chunks(chunk)
-                .zip(bases.chunks(chunk))
-                .zip(results.iter_mut())
+        coeffs
+            .par_chunks(chunk)
+            .zip(bases.par_chunks(chunk))
+            .zip(results.par_iter_mut())
+            .for_each(|((coeffs, bases), acc)|
             {
-                scope.spawn(move |_| {
-                    multiexp_serial(coeffs, bases, acc);
-                });
-            }
-        });
+                multiexp_serial(coeffs, bases, acc);
+            });
         results.iter().fold(C::Curve::identity(), |a, b| a + b)
     } else {
         let mut acc = C::Curve::identity();
@@ -415,6 +417,12 @@ pub fn parallelize<T: Send, F: Fn(&mut [T], usize) + Send + Sync + Clone>(v: &mu
         chunk = n as usize;
     }
 
+    v.par_chunks_mut(chunk).enumerate().for_each(|(chunk_num, v)| {
+        let f = f.clone();
+        let start = chunk_num * chunk;
+        f(v, start);
+    });
+/*
     multicore::scope(|scope| {
         for (chunk_num, v) in v.chunks_mut(chunk).enumerate() {
             let f = f.clone();
@@ -424,6 +432,7 @@ pub fn parallelize<T: Send, F: Fn(&mut [T], usize) + Send + Sync + Clone>(v: &mu
             });
         }
     });
+*/
 }
 ///
 #[cfg(not(feature = "multicore"))]
