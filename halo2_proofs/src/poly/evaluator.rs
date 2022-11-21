@@ -20,7 +20,10 @@ use crate::{arithmetic::parallelize, multicore};
 /// in the current parallelization environment.
 fn get_chunk_params(poly_len: usize) -> (usize, usize) {
     // Check the level of parallelization we have available.
+    #[cfg(feature = "multicore")]
     let num_threads = multicore::current_num_threads();
+    #[cfg(not(feature = "multicore"))]
+    let num_threads = 1;
     // We scale the number of chunks by a constant factor, to ensure that if not all
     // threads are available, we can achieve more uniform throughput and don't end up
     // waiting on a couple of threads to process the last chunks.
@@ -256,6 +259,7 @@ impl<E, F: Field, B: Basis> Evaluator<E, F, B> {
         // Apply `ast` to each chunk in parallel, writing the result into an output
         // polynomial.
         let mut result = B::empty_poly(domain);
+        #[cfg(feature = "multicore")]
         multicore::scope(|scope| {
             for (chunk_index, (out, leaves)) in
                 result.chunks_mut(chunk_size).zip(chunks.iter()).enumerate()
@@ -272,6 +276,19 @@ impl<E, F: Field, B: Basis> Evaluator<E, F, B> {
                 });
             }
         });
+        #[cfg(not(feature = "multicore"))]
+        for (chunk_index, (out, leaves)) in
+            result.chunks_mut(chunk_size).zip(chunks.iter()).enumerate()
+        {
+            let ctx = AstContext {
+                domain,
+                poly_len,
+                chunk_size,
+                chunk_index,
+                leaves,
+            };
+            out.copy_from_slice(&recurse(ast, &ctx));
+        }
         result
     }
 }
