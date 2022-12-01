@@ -4,11 +4,7 @@ use rand_core::OsRng;
 
 use super::{verify_proof, VerificationStrategy};
 use crate::{
-//<<<<<<< HEAD
-    //multicore, // mschoenebeck: commented out because it's unused(?)
-//=======
     multicore::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator},
-//>>>>>>> 6ae9f77e04d471c64b31b86486fb6ae974dc31a1
     plonk::{Error, VerifyingKey},
     poly::commitment::{Guard, Params, MSM},
     transcript::{Blake2bRead, EncodedChallenge},

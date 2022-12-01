@@ -10,13 +10,12 @@ use group::{
 
 pub use pasta_curves::arithmetic::*;
 
-//<<<<<<< HEAD
 use rayon::prelude::ParallelSlice;
 use rayon::iter::IndexedParallelIterator;
 use rayon::iter::IntoParallelRefMutIterator;
 use rayon::prelude::ParallelIterator;
 use rayon::prelude::ParallelSliceMut;
-//=======
+
 /// This represents an element of a group with basic operations that can be
 /// performed. This allows an FFT implementation (for example) to operate
 /// generically over either a field or elliptic curve group.
@@ -31,7 +30,6 @@ where
     T: Copy + Send + Sync + 'static + GroupOpsOwned + ScalarMulOwned<Scalar>,
 {
 }
-//>>>>>>> 6ae9f77e04d471c64b31b86486fb6ae974dc31a1
 
 fn multiexp_serial<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C], acc: &mut C::Curve) {
     let coeffs: Vec<_> = coeffs.iter().map(|a| a.to_repr()).collect();
@@ -198,12 +196,8 @@ pub fn best_multiexp<C: CurveAffine>(coeffs: &[C::Scalar], bases: &[C]) -> C::Cu
 /// by $n$.
 ///
 /// This will use multithreading if beneficial.
-//<<<<<<< HEAD
 #[cfg(feature = "multicore")]
-//pub fn best_fft<G: Group>(a: &mut [G], omega: G::Scalar, log_n: u32) {
-//=======
 pub fn best_fft<Scalar: Field, G: FftGroup<Scalar>>(a: &mut [G], omega: Scalar, log_n: u32) {
-//>>>>>>> 6ae9f77e04d471c64b31b86486fb6ae974dc31a1
     fn bitreverse(mut n: usize, l: usize) -> usize {
         let mut r = 0;
         for _ in 0..l {
@@ -302,12 +296,8 @@ pub fn best_fft<G: Group>(a: &mut [G], omega: G::Scalar, log_n: u32) {
 }
 
 /// This perform recursive butterfly arithmetic
-//<<<<<<< HEAD
 #[cfg(feature = "multicore")]
-//pub fn recursive_butterfly_arithmetic<G: Group>(
-//=======
 pub fn recursive_butterfly_arithmetic<Scalar: Field, G: FftGroup<Scalar>>(
-//>>>>>>> 6ae9f77e04d471c64b31b86486fb6ae974dc31a1
     a: &mut [G],
     n: usize,
     twiddle_chunk: usize,

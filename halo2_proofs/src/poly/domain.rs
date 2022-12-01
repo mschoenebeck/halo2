@@ -8,25 +8,16 @@ use crate::{
 
 use super::{Coeff, ExtendedLagrangeCoeff, LagrangeCoeff, Polynomial, Rotation};
 
-//<<<<<<< HEAD
-use group::ff::{BatchInvert, Field};//, PrimeField};
+use group::ff::{BatchInvert, Field};
 use serde::{Serialize, Deserialize};
-//=======
-//use group::ff::{BatchInvert, Field};
-//>>>>>>> 6ae9f77e04d471c64b31b86486fb6ae974dc31a1
 
 use std::marker::PhantomData;
 
 /// This structure contains precomputed constants and other details needed for
 /// performing operations on an evaluation domain of size $2^k$ and an extended
 /// domain of size $2^{k} * j$ with $j \neq 0$.
-//<<<<<<< HEAD
 #[derive(Clone, Debug, Serialize, Deserialize)]
-//pub struct EvaluationDomain<G: Group> {
-//=======
-//#[derive(Clone, Debug)]
 pub struct EvaluationDomain<F: Field> {
-//>>>>>>> 6ae9f77e04d471c64b31b86486fb6ae974dc31a1
     n: u64,
     k: u32,
     extended_k: u32,

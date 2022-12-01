@@ -6,12 +6,8 @@ use crate::arithmetic::parallelize;
 use crate::plonk::Assigned;
 
 use group::ff::{BatchInvert, Field};
-//<<<<<<< HEAD
-//use pasta_curves::arithmetic::FieldExt;
 use serde::{Serialize, Deserialize};
-//=======
 
-//>>>>>>> 6ae9f77e04d471c64b31b86486fb6ae974dc31a1
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::ops::{Add, Deref, DerefMut, Index, IndexMut, Mul, RangeFrom, RangeFull};
@@ -309,11 +305,7 @@ impl<F: Field, B: Basis> Mul<F> for Polynomial<F, B> {
 /// Describes the relative rotation of a vector. Negative numbers represent
 /// reverse (leftmost) rotations and positive numbers represent forward (rightmost)
 /// rotations. Zero represents no rotation.
-//<<<<<<< HEAD
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-//=======
-//#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-//>>>>>>> 6ae9f77e04d471c64b31b86486fb6ae974dc31a1
 pub struct Rotation(pub i32);
 
 impl Rotation {
