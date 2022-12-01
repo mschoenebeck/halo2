@@ -83,7 +83,7 @@ impl<C: CurveAffine> Params<C> {
         }
         let mut g_lagrange_projective = g_projective;
         best_fft(&mut g_lagrange_projective, alpha_inv, k);
-        let minv = C::Scalar::TWO_INV.pow_vartime(&[k as u64, 0, 0, 0]);
+        let minv = C::Scalar::TWO_INV.pow_vartime([k as u64, 0, 0, 0]);
         parallelize(&mut g_lagrange_projective, |g, _| {
             for g in g.iter_mut() {
                 *g *= minv;
@@ -207,13 +207,13 @@ impl<C: CurveAffine> Params<C> {
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct Blind<F>(pub F);
 
-impl<F: FieldExt> Default for Blind<F> {
+impl<F: Field> Default for Blind<F> {
     fn default() -> Self {
         Blind(F::one())
     }
 }
 
-impl<F: FieldExt> Add for Blind<F> {
+impl<F: Field> Add for Blind<F> {
     type Output = Self;
 
     fn add(self, rhs: Blind<F>) -> Self {
@@ -221,7 +221,7 @@ impl<F: FieldExt> Add for Blind<F> {
     }
 }
 
-impl<F: FieldExt> Mul for Blind<F> {
+impl<F: Field> Mul for Blind<F> {
     type Output = Self;
 
     fn mul(self, rhs: Blind<F>) -> Self {
@@ -229,25 +229,25 @@ impl<F: FieldExt> Mul for Blind<F> {
     }
 }
 
-impl<F: FieldExt> AddAssign for Blind<F> {
+impl<F: Field> AddAssign for Blind<F> {
     fn add_assign(&mut self, rhs: Blind<F>) {
         self.0 += rhs.0;
     }
 }
 
-impl<F: FieldExt> MulAssign for Blind<F> {
+impl<F: Field> MulAssign for Blind<F> {
     fn mul_assign(&mut self, rhs: Blind<F>) {
         self.0 *= rhs.0;
     }
 }
 
-impl<F: FieldExt> AddAssign<F> for Blind<F> {
+impl<F: Field> AddAssign<F> for Blind<F> {
     fn add_assign(&mut self, rhs: F) {
         self.0 += rhs;
     }
 }
 
-impl<F: FieldExt> MulAssign<F> for Blind<F> {
+impl<F: Field> MulAssign<F> for Blind<F> {
     fn mul_assign(&mut self, rhs: F) {
         self.0 *= rhs;
     }
@@ -310,7 +310,7 @@ fn test_opening_proof() {
         commitment::{Blind, Params},
         EvaluationDomain,
     };
-    use crate::arithmetic::{eval_polynomial, FieldExt};
+    use crate::arithmetic::eval_polynomial;
     use crate::pasta::{EpAffine, Fq};
     use crate::transcript::{
         Blake2bRead, Blake2bWrite, Challenge255, Transcript, TranscriptRead, TranscriptWrite,

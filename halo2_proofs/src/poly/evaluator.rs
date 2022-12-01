@@ -1,7 +1,5 @@
 use std::{
-    cmp,
-    collections::{HashMap, HashSet},
-    fmt,
+    cmp, fmt,
     hash::{Hash, Hasher},
     marker::PhantomData,
     ops::{Add, Mul, MulAssign, Neg, Sub},
@@ -14,11 +12,11 @@ use pasta_curves::arithmetic::FieldExt;
 use super::{
     Basis, Coeff, EvaluationDomain, ExtendedLagrangeCoeff, LagrangeCoeff, Polynomial, Rotation,
 };
-use crate::{arithmetic::parallelize, multicore};
+use crate::multicore;
 
 use rayon::prelude::{ParallelSliceMut, ParallelIterator};
 use rayon::iter::IndexedParallelIterator;
-use rayon::iter::IntoParallelRefIterator;
+//use rayon::iter::IntoParallelRefIterator;
 
 /// Returns `(chunk_size, num_chunks)` suitable for processing the given polynomial length
 /// in the current parallelization environment.
@@ -145,74 +143,30 @@ impl<E, F: Field, B: Basis> Evaluator<E, F, B> {
         F: FieldExt,
         B: BasisOps,
     {
-        // Traverse `ast` to collect the used leaves.
-        fn collect_rotations<E: Copy, F: Field, B: Basis>(
-            ast: &Ast<E, F, B>,
-        ) -> HashSet<AstLeaf<E, B>> {
-            match ast {
-                Ast::Poly(leaf) => vec![*leaf].into_iter().collect(),
-                Ast::Add(a, b) | Ast::Mul(AstMul(a, b)) => {
-                    let lhs = collect_rotations(a);
-                    let rhs = collect_rotations(b);
-                    lhs.union(&rhs).cloned().collect()
-                }
-                Ast::Scale(a, _) => collect_rotations(a),
-                Ast::DistributePowers(terms, _) => terms
-                    .iter()
-                    .flat_map(|term| collect_rotations(term).into_iter())
-                    .collect(),
-                Ast::LinearTerm(_) | Ast::ConstantTerm(_) => HashSet::default(),
-            }
-        }
-        let leaves = collect_rotations(ast);
-
-        // Produce the rotated polynomials.
-        let rotated: HashMap<_, _> = leaves
-            .iter()
-            .cloned()
-            .map(|leaf| {
-                (
-                    leaf,
-                    B::rotate(domain, &self.polys[leaf.index], leaf.rotation),
-                )
-            })
-            .collect();
-
         // We're working in a single basis, so all polynomials are the same length.
         let poly_len = self.polys.first().unwrap().len();
-        let (chunk_size, num_chunks) = get_chunk_params(poly_len);
+        let (chunk_size, _num_chunks) = get_chunk_params(poly_len);
 
-        // Split each rotated polynomial into chunks.
-        let chunks: Vec<HashMap<_, _>> = (0..num_chunks)
-            .map(|i| {
-                rotated
-                    .iter()
-                    .map(|(leaf, poly)| {
-                        (
-                            *leaf,
-                            poly.chunks(chunk_size)
-                                .nth(i)
-                                .expect("num_chunks was calculated correctly"),
-                        )
-                    })
-                    .collect()
-            })
-            .collect();
-
-        struct AstContext<'a, E, F: FieldExt, B: Basis> {
+        struct AstContext<'a, F: Field, B: Basis> {
             domain: &'a EvaluationDomain<F>,
             poly_len: usize,
             chunk_size: usize,
             chunk_index: usize,
-            leaves: &'a HashMap<AstLeaf<E, B>, &'a [F]>,
+            polys: &'a [Polynomial<F, B>],
         }
 
         fn recurse<E, F: FieldExt, B: BasisOps>(
             ast: &Ast<E, F, B>,
-            ctx: &AstContext<'_, E, F, B>,
+            ctx: &AstContext<'_, F, B>,
         ) -> Vec<F> {
             match ast {
-                Ast::Poly(leaf) => ctx.leaves.get(leaf).expect("We prepared this").to_vec(),
+                Ast::Poly(leaf) => B::get_chunk_of_rotated(
+                    ctx.domain,
+                    ctx.chunk_size,
+                    ctx.chunk_index,
+                    &ctx.polys[leaf.index],
+                    leaf.rotation,
+                ),
                 Ast::Add(a, b) => {
                     let mut lhs = recurse(a, ctx);
                     let rhs = recurse(b, ctx);
@@ -264,30 +218,28 @@ impl<E, F: Field, B: Basis> Evaluator<E, F, B> {
         // polynomial.
         let mut result = B::empty_poly(domain);
         #[cfg(feature = "multicore")]
-        result.par_chunks_mut(chunk_size).zip(chunks.par_iter()).enumerate().for_each(
-            |(chunk_index, (out, leaves))| 
+        result.par_chunks_mut(chunk_size).enumerate().for_each(
+            |(chunk_index, out)| 
         {
             let ctx = AstContext {
                 domain,
                 poly_len,
                 chunk_size,
                 chunk_index,
-                leaves,
+                polys: &self.polys,
             };
             out.copy_from_slice(&recurse(ast, &ctx));
         });
         /*
         multicore::scope(|scope| {
-            for (chunk_index, (out, leaves)) in
-                result.chunks_mut(chunk_size).zip(chunks.iter()).enumerate()
-            {
+            for (chunk_index, out) in result.chunks_mut(chunk_size).enumerate() {
                 scope.spawn(move |_| {
                     let ctx = AstContext {
                         domain,
                         poly_len,
                         chunk_size,
                         chunk_index,
-                        leaves,
+                        polys: &self.polys,
                     };
                     out.copy_from_slice(&recurse(ast, &ctx));
                 });
@@ -295,15 +247,15 @@ impl<E, F: Field, B: Basis> Evaluator<E, F, B> {
         });
         */
         #[cfg(not(feature = "multicore"))]
-        for (chunk_index, (out, leaves)) in
-            result.chunks_mut(chunk_size).zip(chunks.iter()).enumerate()
+        for (chunk_index, out) in
+            result.chunks_mut(chunk_size).enumerate()
         {
             let ctx = AstContext {
                 domain,
                 poly_len,
                 chunk_size,
                 chunk_index,
-                leaves,
+                polys: &self.polys,
             };
             out.copy_from_slice(&recurse(ast, &ctx));
         }
@@ -525,7 +477,7 @@ impl<E: Clone, F: Field> MulAssign for Ast<E, F, ExtendedLagrangeCoeff> {
 /// Operations which can be performed over a given basis.
 pub(crate) trait BasisOps: Basis {
     fn empty_poly<F: FieldExt>(domain: &EvaluationDomain<F>) -> Polynomial<F, Self>;
-    fn constant_term<F: FieldExt>(
+    fn constant_term<F: Field>(
         poly_len: usize,
         chunk_size: usize,
         chunk_index: usize,
@@ -538,11 +490,13 @@ pub(crate) trait BasisOps: Basis {
         chunk_index: usize,
         scalar: F,
     ) -> Vec<F>;
-    fn rotate<F: FieldExt>(
+    fn get_chunk_of_rotated<F: FieldExt>(
         domain: &EvaluationDomain<F>,
+        chunk_size: usize,
+        chunk_index: usize,
         poly: &Polynomial<F, Self>,
         rotation: Rotation,
-    ) -> Polynomial<F, Self>;
+    ) -> Vec<F>;
 }
 
 impl BasisOps for Coeff {
@@ -550,7 +504,7 @@ impl BasisOps for Coeff {
         domain.empty_coeff()
     }
 
-    fn constant_term<F: FieldExt>(
+    fn constant_term<F: Field>(
         poly_len: usize,
         chunk_size: usize,
         chunk_index: usize,
@@ -585,11 +539,13 @@ impl BasisOps for Coeff {
         chunk
     }
 
-    fn rotate<F: FieldExt>(
+    fn get_chunk_of_rotated<F: FieldExt>(
         _: &EvaluationDomain<F>,
+        _: usize,
+        _: usize,
         _: &Polynomial<F, Self>,
         _: Rotation,
-    ) -> Polynomial<F, Self> {
+    ) -> Vec<F> {
         panic!("Can't rotate polynomials in the standard basis")
     }
 }
@@ -599,7 +555,7 @@ impl BasisOps for LagrangeCoeff {
         domain.empty_lagrange()
     }
 
-    fn constant_term<F: FieldExt>(
+    fn constant_term<F: Field>(
         poly_len: usize,
         chunk_size: usize,
         chunk_index: usize,
@@ -619,7 +575,7 @@ impl BasisOps for LagrangeCoeff {
         let omega = domain.get_omega();
         let start = chunk_size * chunk_index;
         (0..cmp::min(chunk_size, poly_len - start))
-            .scan(omega.pow_vartime(&[start as u64]) * scalar, |acc, _| {
+            .scan(omega.pow_vartime([start as u64]) * scalar, |acc, _| {
                 let ret = *acc;
                 *acc *= omega;
                 Some(ret)
@@ -627,12 +583,14 @@ impl BasisOps for LagrangeCoeff {
             .collect()
     }
 
-    fn rotate<F: FieldExt>(
+    fn get_chunk_of_rotated<F: FieldExt>(
         _: &EvaluationDomain<F>,
+        chunk_size: usize,
+        chunk_index: usize,
         poly: &Polynomial<F, Self>,
         rotation: Rotation,
-    ) -> Polynomial<F, Self> {
-        poly.rotate(rotation)
+    ) -> Vec<F> {
+        poly.get_chunk_of_rotated(rotation, chunk_size, chunk_index)
     }
 }
 
@@ -641,7 +599,7 @@ impl BasisOps for ExtendedLagrangeCoeff {
         domain.empty_extended()
     }
 
-    fn constant_term<F: FieldExt>(
+    fn constant_term<F: Field>(
         poly_len: usize,
         chunk_size: usize,
         chunk_index: usize,
@@ -662,7 +620,7 @@ impl BasisOps for ExtendedLagrangeCoeff {
         let start = chunk_size * chunk_index;
         (0..cmp::min(chunk_size, poly_len - start))
             .scan(
-                omega.pow_vartime(&[start as u64]) * F::ZETA * scalar,
+                omega.pow_vartime([start as u64]) * F::ZETA * scalar,
                 |acc, _| {
                     let ret = *acc;
                     *acc *= omega;
@@ -672,26 +630,23 @@ impl BasisOps for ExtendedLagrangeCoeff {
             .collect()
     }
 
-    fn rotate<F: FieldExt>(
+    fn get_chunk_of_rotated<F: FieldExt>(
         domain: &EvaluationDomain<F>,
+        chunk_size: usize,
+        chunk_index: usize,
         poly: &Polynomial<F, Self>,
         rotation: Rotation,
-    ) -> Polynomial<F, Self> {
-        domain.rotate_extended(poly, rotation)
+    ) -> Vec<F> {
+        domain.get_chunk_of_rotated_extended(poly, rotation, chunk_size, chunk_index)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::iter;
-
     use pasta_curves::pallas;
 
     use super::{get_chunk_params, new_evaluator, Ast, BasisOps, Evaluator};
-    use crate::{
-        multicore,
-        poly::{Coeff, EvaluationDomain, ExtendedLagrangeCoeff, LagrangeCoeff},
-    };
+    use crate::poly::{Coeff, EvaluationDomain, ExtendedLagrangeCoeff, LagrangeCoeff};
 
     #[test]
     fn short_chunk_regression_test() {
