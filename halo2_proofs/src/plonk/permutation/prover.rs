@@ -43,6 +43,7 @@ pub(crate) struct Evaluated<C: CurveAffine> {
 }
 
 impl Argument {
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::plonk) fn commit<
         C: CurveAffine,
         E: EncodedChallenge<C>,
@@ -127,7 +128,7 @@ impl Argument {
                     Any::Instance => instance,
                 };
                 parallelize(&mut modified_values, |modified_values, start| {
-                    let mut deltaomega = deltaomega * &omega.pow_vartime(&[start as u64, 0, 0, 0]);
+                    let mut deltaomega = deltaomega * &omega.pow_vartime([start as u64, 0, 0, 0]);
                     for (modified_values, value) in modified_values
                         .iter_mut()
                         .zip(values[column.index()][start..].iter())
@@ -194,6 +195,7 @@ impl Argument {
 }
 
 impl<C: CurveAffine, Ev: Copy + Send + Sync> Committed<C, Ev> {
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::plonk) fn construct<'a>(
         self,
         pk: &'a plonk::ProvingKey<C>,
@@ -290,7 +292,7 @@ impl<C: CurveAffine, Ev: Copy + Send + Sync> Committed<C, Ev> {
 
                         let mut right = poly::Ast::from(set.permutation_product_coset);
                         let mut current_delta = *beta
-                            * &(C::Scalar::DELTA.pow_vartime(&[(chunk_index * chunk_len) as u64]));
+                            * &(C::Scalar::DELTA.pow_vartime([(chunk_index * chunk_len) as u64]));
                         for values in columns.iter().map(|&column| match column.column_type() {
                             Any::Advice => &advice_cosets[column.index()],
                             Any::Fixed => &fixed_cosets[column.index()],

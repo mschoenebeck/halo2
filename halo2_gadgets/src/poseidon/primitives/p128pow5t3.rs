@@ -22,7 +22,7 @@ impl Spec<Fp, 3, 2> for P128Pow5T3 {
     }
 
     fn sbox(val: Fp) -> Fp {
-        val.pow_vartime(&[5])
+        val.pow_vartime([5])
     }
 
     fn secure_mds() -> usize {
@@ -48,7 +48,7 @@ impl Spec<Fq, 3, 2> for P128Pow5T3 {
     }
 
     fn sbox(val: Fq) -> Fq {
-        val.pow_vartime(&[5])
+        val.pow_vartime([5])
     }
 
     fn secure_mds() -> usize {
@@ -66,7 +66,7 @@ impl Spec<Fq, 3, 2> for P128Pow5T3 {
 
 #[cfg(test)]
 mod tests {
-    use ff::PrimeField;
+    use ff::{Field, PrimeField};
     use std::marker::PhantomData;
 
     use pasta_curves::arithmetic::FieldExt;
@@ -75,14 +75,17 @@ mod tests {
         super::{fp, fq},
         Fp, Fq,
     };
-    use crate::poseidon::primitives::{permute, ConstantLength, Hash, Spec};
+    use crate::poseidon::primitives::{
+        generate_constants, permute, ConstantLength, Hash, Mds, Spec,
+    };
 
     /// The same Poseidon specification as poseidon::P128Pow5T3, but constructed
     /// such that its constants will be generated at runtime.
     #[derive(Debug)]
-    pub struct P128Pow5T3Gen<F: FieldExt, const SECURE_MDS: usize>(PhantomData<F>);
+    pub struct P128Pow5T3Gen<F: Field, const SECURE_MDS: usize>(PhantomData<F>);
 
-    impl<F: FieldExt, const SECURE_MDS: usize> P128Pow5T3Gen<F, SECURE_MDS> {
+    impl<F: Field, const SECURE_MDS: usize> P128Pow5T3Gen<F, SECURE_MDS> {
+        #![allow(dead_code)]
         pub fn new() -> Self {
             P128Pow5T3Gen(PhantomData::default())
         }
@@ -98,11 +101,15 @@ mod tests {
         }
 
         fn sbox(val: F) -> F {
-            val.pow_vartime(&[5])
+            val.pow_vartime([5])
         }
 
         fn secure_mds() -> usize {
             SECURE_MDS
+        }
+
+        fn constants() -> (Vec<[F; 3]>, Mds<F, 3>, Mds<F, 3>) {
+            generate_constants::<_, Self, 3, 2>()
         }
     }
 

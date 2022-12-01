@@ -1,6 +1,5 @@
 use ff::Field;
 use group::Curve;
-use rand_core::RngCore;
 use std::iter;
 
 use super::{
@@ -204,7 +203,7 @@ pub fn verify_proof<
     // commitments open to the correct values.
     let vanishing = {
         // x^n
-        let xn = x.pow(&[params.n as u64, 0, 0, 0]);
+        let xn = x.pow(&[params.n, 0, 0, 0]);
 
         let blinding_factors = vk.cs.blinding_factors();
         let l_evals = vk

@@ -2,7 +2,6 @@
 
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::fmt;
 use std::iter;
 use std::ops::{Add, Mul, Neg, Range};
 
@@ -10,13 +9,12 @@ use ff::Field;
 
 use crate::plonk::Assigned;
 use crate::{
-    arithmetic::{FieldExt, Group},
+    arithmetic::FieldExt,
     circuit,
     plonk::{
-        permutation, Advice, Any, Assignment, Circuit, Column, ColumnType, ConstraintSystem, Error,
-        Expression, Fixed, FloorPlanner, Instance, Selector, VirtualCell,
+        permutation, Advice, Any, Assignment, Circuit, Column, ConstraintSystem, Error, Expression,
+        Fixed, FloorPlanner, Instance, Selector,
     },
-    poly::Rotation,
 };
 
 pub mod metadata;
@@ -74,7 +72,7 @@ impl Region {
 
 /// The value of a particular cell within the circuit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum CellValue<F: Group + Field> {
+enum CellValue<F: Field> {
     // An unassigned cell.
     Unassigned,
     // A cell that has been assigned a value.
@@ -85,12 +83,12 @@ enum CellValue<F: Group + Field> {
 
 /// A value within an expression.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd)]
-enum Value<F: Group + Field> {
+enum Value<F: Field> {
     Real(F),
     Poison,
 }
 
-impl<F: Group + Field> From<CellValue<F>> for Value<F> {
+impl<F: Field> From<CellValue<F>> for Value<F> {
     fn from(value: CellValue<F>) -> Self {
         match value {
             // Cells that haven't been explicitly assigned to, default to zero.
@@ -101,7 +99,7 @@ impl<F: Group + Field> From<CellValue<F>> for Value<F> {
     }
 }
 
-impl<F: Group + Field> Neg for Value<F> {
+impl<F: Field> Neg for Value<F> {
     type Output = Self;
 
     fn neg(self) -> Self::Output {
@@ -112,7 +110,7 @@ impl<F: Group + Field> Neg for Value<F> {
     }
 }
 
-impl<F: Group + Field> Add for Value<F> {
+impl<F: Field> Add for Value<F> {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self::Output {
@@ -123,7 +121,7 @@ impl<F: Group + Field> Add for Value<F> {
     }
 }
 
-impl<F: Group + Field> Mul for Value<F> {
+impl<F: Field> Mul for Value<F> {
     type Output = Self;
 
     fn mul(self, rhs: Self) -> Self::Output {
@@ -141,7 +139,7 @@ impl<F: Group + Field> Mul for Value<F> {
     }
 }
 
-impl<F: Group + Field> Mul<F> for Value<F> {
+impl<F: Field> Mul<F> for Value<F> {
     type Output = Self;
 
     fn mul(self, rhs: F) -> Self::Output {
@@ -269,7 +267,7 @@ impl<F: Group + Field> Mul<F> for Value<F> {
 /// ));
 /// ```
 #[derive(Debug)]
-pub struct MockProver<F: Group + Field> {
+pub struct MockProver<F: Field> {
     k: u32,
     n: u32,
     cs: ConstraintSystem<F>,
@@ -285,7 +283,7 @@ pub struct MockProver<F: Group + Field> {
     // The advice cells in the circuit, arranged as [column][row].
     advice: Vec<Vec<CellValue<F>>>,
     // The instance cells in the circuit, arranged as [column][row].
-    instance: Vec<Vec<F>>,
+    instance: Vec<Vec<InstanceValue<F>>>,
 
     selectors: Vec<Vec<bool>>,
 
@@ -295,7 +293,22 @@ pub struct MockProver<F: Group + Field> {
     usable_rows: Range<usize>,
 }
 
-impl<F: Field + Group> Assignment<F> for MockProver<F> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum InstanceValue<F: Field> {
+    Assigned(F),
+    Padding,
+}
+
+impl<F: Field> InstanceValue<F> {
+    fn value(&self) -> F {
+        match self {
+            InstanceValue::Assigned(v) => *v,
+            InstanceValue::Padding => F::zero(),
+        }
+    }
+}
+
+impl<F: Field> Assignment<F> for MockProver<F> {
     fn enter_region<NR, N>(&mut self, name: N)
     where
         NR: Into<String>,
@@ -351,7 +364,7 @@ impl<F: Field + Group> Assignment<F> for MockProver<F> {
         self.instance
             .get(column.index())
             .and_then(|column| column.get(row))
-            .map(|v| circuit::Value::known(*v))
+            .map(|v| circuit::Value::known(v.value()))
             .ok_or(Error::BoundsFailure)
     }
 
@@ -488,13 +501,17 @@ impl<F: FieldExt> MockProver<F> {
 
         let instance = instance
             .into_iter()
-            .map(|mut instance| {
+            .map(|instance| {
                 if instance.len() > n - (cs.blinding_factors() + 1) {
                     return Err(Error::InstanceTooLarge);
                 }
 
-                instance.resize(n, F::zero());
-                Ok(instance)
+                let mut instance_values = vec![InstanceValue::Padding; n];
+                for (idx, value) in instance.into_iter().enumerate() {
+                    instance_values[idx] = InstanceValue::Assigned(value);
+                }
+
+                Ok(instance_values)
             })
             .collect::<Result<Vec<_>, _>>()?;
 
@@ -578,17 +595,37 @@ impl<F: FieldExt> MockProver<F> {
                                 // Determine where this cell should have been assigned.
                                 let cell_row = ((gate_row + n + cell.rotation.0) % n) as usize;
 
-                                // Check that it was assigned!
-                                if r.cells.contains(&(cell.column, cell_row)) {
-                                    None
-                                } else {
-                                    Some(VerifyFailure::CellNotAssigned {
-                                        gate: (gate_index, gate.name()).into(),
-                                        region: (r_i, r.name.clone()).into(),
-                                        gate_offset: *selector_row,
-                                        column: cell.column,
-                                        offset: cell_row as isize - r.rows.unwrap().0 as isize,
-                                    })
+                                match cell.column.column_type() {
+                                    Any::Instance => {
+                                        // Handle instance cells, which are not in the region.
+                                        let instance_value =
+                                            &self.instance[cell.column.index()][cell_row];
+                                        match instance_value {
+                                            InstanceValue::Assigned(_) => None,
+                                            _ => Some(VerifyFailure::InstanceCellNotAssigned {
+                                                gate: (gate_index, gate.name()).into(),
+                                                region: (r_i, r.name.clone()).into(),
+                                                gate_offset: *selector_row,
+                                                column: cell.column.try_into().unwrap(),
+                                                row: cell_row,
+                                            }),
+                                        }
+                                    }
+                                    _ => {
+                                        // Check that it was assigned!
+                                        if r.cells.contains(&(cell.column, cell_row)) {
+                                            None
+                                        } else {
+                                            Some(VerifyFailure::CellNotAssigned {
+                                                gate: (gate_index, gate.name()).into(),
+                                                region: (r_i, r.name.clone()).into(),
+                                                gate_offset: *selector_row,
+                                                column: cell.column,
+                                                offset: cell_row as isize
+                                                    - r.rows.unwrap().0 as isize,
+                                            })
+                                        }
+                                    }
                                 }
                             })
                         })
@@ -695,7 +732,8 @@ impl<F: FieldExt> MockProver<F> {
                                 let rotation = query.1 .0;
                                 Value::Real(
                                     self.instance[column_index]
-                                        [(row as i32 + n + rotation) as usize % n as usize],
+                                        [(row as i32 + n + rotation) as usize % n as usize]
+                                        .value(),
                                 )
                             },
                             &|a| -a,
@@ -798,7 +836,10 @@ impl<F: FieldExt> MockProver<F> {
                     .map(|c: &Column<Any>| match c.column_type() {
                         Any::Advice => self.advice[c.index()][row],
                         Any::Fixed => self.fixed[c.index()][row],
-                        Any::Instance => CellValue::Assigned(self.instance[c.index()][row]),
+                        Any::Instance => {
+                            let cell: &InstanceValue<F> = &self.instance[c.index()][row];
+                            CellValue::Assigned(cell.value())
+                        }
                     })
                     .unwrap()
             };

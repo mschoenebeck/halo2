@@ -2,6 +2,7 @@
 #![allow(clippy::op_ref)]
 
 use assert_matches::assert_matches;
+use group::ff::Field;
 use halo2_proofs::arithmetic::{CurveAffine, FieldExt};
 use halo2_proofs::circuit::{Cell, Layouter, SimpleFloorPlanner, Value};
 use halo2_proofs::dev::MockProver;
@@ -44,7 +45,7 @@ fn plonk_api() {
     }
 
     #[allow(clippy::type_complexity)]
-    trait StandardCs<FF: FieldExt> {
+    trait StandardCs<FF: Field> {
         fn raw_multiply<F>(
             &self,
             layouter: &mut impl Layouter<FF>,
@@ -71,17 +72,17 @@ fn plonk_api() {
     }
 
     #[derive(Clone)]
-    struct MyCircuit<F: FieldExt> {
+    struct MyCircuit<F: Field> {
         a: Value<F>,
         lookup_table: Vec<F>,
     }
 
-    struct StandardPlonk<F: FieldExt> {
+    struct StandardPlonk<F: Field> {
         config: PlonkConfig,
         _marker: PhantomData<F>,
     }
 
-    impl<FF: FieldExt> StandardPlonk<FF> {
+    impl<FF: Field> StandardPlonk<FF> {
         fn new(config: PlonkConfig) -> Self {
             StandardPlonk {
                 config,
@@ -90,7 +91,7 @@ fn plonk_api() {
         }
     }
 
-    impl<FF: FieldExt> StandardCs<FF> for StandardPlonk<FF> {
+    impl<FF: Field> StandardCs<FF> for StandardPlonk<FF> {
         fn raw_multiply<F>(
             &self,
             layouter: &mut impl Layouter<FF>,
@@ -265,7 +266,7 @@ fn plonk_api() {
         }
     }
 
-    impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
+    impl<F: Field> Circuit<F> for MyCircuit<F> {
         type Config = PlonkConfig;
         type FloorPlanner = SimpleFloorPlanner;
 
@@ -459,13 +460,14 @@ fn plonk_api() {
         .expect("proof generation should not fail");
         let proof: Vec<u8> = transcript.finalize();
 
-        std::fs::write("plonk_api_proof.bin", &proof[..])
+        std::fs::write("./tests/plonk_api_proof.bin", &proof[..])
             .expect("should succeed to write new proof");
     }
 
     {
         // Check that a hardcoded proof is satisfied
-        let proof = include_bytes!("plonk_api_proof.bin");
+        let proof =
+            std::fs::read("./tests/plonk_api_proof.bin").expect("should succeed to read proof");
         let strategy = SingleVerifier::new(&params);
         let mut transcript = Blake2bRead::<_, _, Challenge255<_>>::init(&proof[..]);
         assert!(verify_proof(
@@ -493,7 +495,7 @@ fn plonk_api() {
         let proof: Vec<u8> = transcript.finalize();
         assert_eq!(
             proof.len(),
-            halo2_proofs::dev::CircuitCost::<Eq, MyCircuit<_>>::measure(K as usize, &circuit)
+            halo2_proofs::dev::CircuitCost::<Eq, MyCircuit<_>>::measure(K, &circuit)
                 .proof_size(2)
                 .into(),
         );

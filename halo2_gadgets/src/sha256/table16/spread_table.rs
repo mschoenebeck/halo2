@@ -1,6 +1,7 @@
 use super::{util::*, AssignedBits};
+
+use group::ff::{Field, PrimeField};
 use halo2_proofs::{
-    arithmetic::FieldExt,
     circuit::{Chip, Layouter, Region, Value},
     pasta::pallas,
     plonk::{Advice, Column, ConstraintSystem, Error, TableColumn},
@@ -68,7 +69,7 @@ impl<const DENSE: usize, const SPREAD: usize> SpreadWord<DENSE, SPREAD> {
 /// A variable stored in advice columns corresponding to a row of [`SpreadTableConfig`].
 #[derive(Clone, Debug)]
 pub(super) struct SpreadVar<const DENSE: usize, const SPREAD: usize> {
-    pub tag: Value<u8>,
+    pub _tag: Value<u8>,
     pub dense: AssignedBits<DENSE>,
     pub spread: AssignedBits<SPREAD>,
 }
@@ -97,7 +98,11 @@ impl<const DENSE: usize, const SPREAD: usize> SpreadVar<DENSE, SPREAD> {
         let spread =
             AssignedBits::<SPREAD>::assign_bits(region, || "spread", cols.spread, row, spread_val)?;
 
-        Ok(SpreadVar { tag, dense, spread })
+        Ok(SpreadVar {
+            _tag: tag,
+            dense,
+            spread,
+        })
     }
 
     pub(super) fn without_lookup(
@@ -128,7 +133,11 @@ impl<const DENSE: usize, const SPREAD: usize> SpreadVar<DENSE, SPREAD> {
             spread_val,
         )?;
 
-        Ok(SpreadVar { tag, dense, spread })
+        Ok(SpreadVar {
+            _tag: tag,
+            dense,
+            spread,
+        })
     }
 }
 
@@ -153,12 +162,12 @@ pub(super) struct SpreadTableConfig {
 }
 
 #[derive(Clone, Debug)]
-pub(super) struct SpreadTableChip<F: FieldExt> {
+pub(super) struct SpreadTableChip<F: Field> {
     config: SpreadTableConfig,
     _marker: PhantomData<F>,
 }
 
-impl<F: FieldExt> Chip<F> for SpreadTableChip<F> {
+impl<F: Field> Chip<F> for SpreadTableChip<F> {
     type Config = SpreadTableConfig;
     type Loaded = ();
 
@@ -171,7 +180,7 @@ impl<F: FieldExt> Chip<F> for SpreadTableChip<F> {
     }
 }
 
-impl<F: FieldExt> SpreadTableChip<F> {
+impl<F: PrimeField> SpreadTableChip<F> {
     pub fn configure(
         meta: &mut ConstraintSystem<F>,
         input_tag: Column<Advice>,
@@ -250,7 +259,7 @@ impl<F: FieldExt> SpreadTableChip<F> {
 }
 
 impl SpreadTableConfig {
-    fn generate<F: FieldExt>() -> impl Iterator<Item = (F, F, F)> {
+    fn generate<F: PrimeField>() -> impl Iterator<Item = (F, F, F)> {
         (1..=(1 << 16)).scan(
             (F::zero(), F::zero(), F::zero()),
             |(tag, dense, spread), i| {
@@ -287,8 +296,8 @@ mod tests {
     use super::{get_tag, SpreadTableChip, SpreadTableConfig};
     use rand::Rng;
 
+    use group::ff::PrimeField;
     use halo2_proofs::{
-        arithmetic::FieldExt,
         circuit::{Layouter, SimpleFloorPlanner, Value},
         dev::MockProver,
         pasta::Fp,
@@ -303,7 +312,7 @@ mod tests {
 
         struct MyCircuit {}
 
-        impl<F: FieldExt> Circuit<F> for MyCircuit {
+        impl<F: PrimeField> Circuit<F> for MyCircuit {
             type Config = SpreadTableConfig;
             type FloorPlanner = SimpleFloorPlanner;
 
