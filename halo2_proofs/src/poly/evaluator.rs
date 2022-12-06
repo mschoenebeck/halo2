@@ -12,10 +12,13 @@ use pasta_curves::arithmetic::FieldExt;
 use super::{
     Basis, Coeff, EvaluationDomain, ExtendedLagrangeCoeff, LagrangeCoeff, Polynomial, Rotation,
 };
+#[cfg(feature = "multicore")]
 use crate::multicore;
-
-use rayon::prelude::{ParallelSliceMut, ParallelIterator};
-use rayon::iter::IndexedParallelIterator;
+#[cfg(feature = "multicore")]
+use rayon::{
+    prelude::{ParallelSliceMut, ParallelIterator},
+    iter::IndexedParallelIterator
+};
 
 /// Returns `(chunk_size, num_chunks)` suitable for processing the given polynomial length
 /// in the current parallelization environment.

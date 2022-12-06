@@ -1,7 +1,14 @@
 //! This module provides common utilities, traits and structures for group,
 //! field and polynomial arithmetic.
 
+#[cfg(feature = "multicore")]
 use super::multicore;
+#[cfg(feature = "multicore")]
+use rayon::{
+    iter::{IndexedParallelIterator, IntoParallelRefMutIterator},
+    prelude::{ParallelSlice, ParallelIterator, ParallelSliceMut}
+};
+
 pub use ff::Field;
 use group::{
     ff::{BatchInvert, PrimeField},
@@ -9,12 +16,6 @@ use group::{
 };
 
 pub use pasta_curves::arithmetic::*;
-
-use rayon::prelude::ParallelSlice;
-use rayon::iter::IndexedParallelIterator;
-use rayon::iter::IntoParallelRefMutIterator;
-use rayon::prelude::ParallelIterator;
-use rayon::prelude::ParallelSliceMut;
 
 /// This represents an element of a group with basic operations that can be
 /// performed. This allows an FFT implementation (for example) to operate
